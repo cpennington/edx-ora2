@@ -103,6 +103,41 @@ class TestPeerAssessment(XBlockHandlerTestCase):
         self.assertGreater(len(resp['msg']), 0)
 
     @scenario('data/peer_assessment_scenario.xml', user_id='Bob')
+    def test_peer_assess_for_already_cancelled_submission(self, xblock):
+        # Create a submission for this problem from another user
+        student_item = xblock.get_student_item_dict()
+        submission = xblock.create_submission(student_item, self.SUBMISSION)
+
+        # Create a submission for the scorer (required before assessing another student)
+        another_student = copy.deepcopy(student_item)
+        another_submission = xblock.create_submission(another_student, self.SUBMISSION)
+
+        assessment = self.ASSESSMENT
+        assessment['submission_uuid'] = assessment.get('submission_uuid', submission.get('uuid', None))
+
+        # Pull the submission to assess
+        peer_api.get_submission_to_assess(another_submission['uuid'], 3)
+        requirements = {
+            "peer": {
+                "must_grade": 1,
+                "must_be_graded_by": 1
+            },
+        }
+
+        workflow_api.cancel_workflow(
+            submission_uuid=submission['uuid'],
+            comments="Inappropriate language",
+            cancelled_by_id=another_student['student_id'],
+            assessment_requirements=requirements
+        )
+
+        # Submit an assessment and expect a failure
+        resp = self.request(xblock, 'peer_assess', json.dumps(assessment), response_format='json')
+
+        self.assertEqual(resp['success'], False)
+        self.assertGreater(len(resp['msg']), 0)
+
+    @scenario('data/peer_assessment_scenario.xml', user_id='Bob')
     def test_missing_keys_in_request(self, xblock):
         for missing in ['criterion_feedback', 'overall_feedback', 'options_selected']:
             assessment = copy.deepcopy(self.ASSESSMENT)
@@ -336,6 +371,28 @@ class TestPeerAssessmentRender(XBlockHandlerTestCase):
             workflow_status='peer',
         )
 
+    @scenario('data/peer_assessment_scenario.xml', user_id='Bob')
+    def test_peer_cancelled_workflow(self, xblock):
+        # Make a submission, so we get to peer assessment
+        xblock.create_submission(xblock.get_student_item_dict(), u"ฬє'гє รՇเɭɭ ๓єภ")
+
+        expected_context = {
+            'graded': 0,
+            'estimated_time': '20 minutes',
+            'rubric_criteria': xblock.rubric_criteria,
+            'must_grade': 5,
+            'review_num': 1,
+            'submit_button_text': 'submit your assessment & move to response #2',
+            'allow_latex': False,
+        }
+
+        self._assert_path_and_context(
+            xblock, 'openassessmentblock/peer/oa_peer_cancelled.html',
+            expected_context,
+            workflow_status='cancelled',
+            graded_enough=True,
+        )
+
     @scenario('data/peer_closed_scenario.xml', user_id='Bob')
     def test_peer_closed_no_assessments_available(self, xblock):
         # Make a submission, so we get to peer assessment
@@ -557,7 +614,7 @@ class TestPeerAssessHandler(XBlockHandlerTestCase):
         'overall_feedback': u'єאςєɭɭєภՇ ฬ๏гк!',
     }
 
-    ASSESSMENT_WITH_SUBMISSION_UUID = {
+    ASSESSMENT_WITH_INVALID_SUBMISSION_UUID = {
         'options_selected': {u'𝓒𝓸𝓷𝓬𝓲𝓼𝓮': u'ﻉซƈﻉɭɭﻉกՇ', u'Form': u'Fair'},
         'criterion_feedback': {u'𝓒𝓸𝓷𝓬𝓲𝓼𝓮': u'ı ʇɥonƃɥʇ ʇɥıs ʍɐs ʌǝɹʎ ɔouɔısǝ.'},
         'overall_feedback': u'єאςєɭɭєภՇ ฬ๏гк!',
@@ -641,16 +698,15 @@ class TestPeerAssessHandler(XBlockHandlerTestCase):
     @scenario('data/peer_assessment_scenario.xml', user_id='Bob')
     def test_submission_uuid_input_regression(self, xblock):
         # Submit a peer assessment
-        submission_uuid, assessment = self._submit_peer_assessment(
-            xblock, 'Sally', 'Bob', self.ASSESSMENT_WITH_SUBMISSION_UUID
+        assessment = self._submit_peer_assessment(
+            xblock,
+            'Sally',
+            'Bob',
+            self.ASSESSMENT_WITH_INVALID_SUBMISSION_UUID,
+            expect_failure=True,
         )
 
-        # Retrieve the assessment and check that it matches what we sent
-        self.assertEqual(assessment['submission_uuid'], submission_uuid)
-        self.assertEqual(assessment['points_earned'], 5)
-        self.assertEqual(assessment['points_possible'], 6)
-        self.assertEqual(assessment['scorer_id'], 'Bob')
-        self.assertEqual(assessment['score_type'], 'PE')
+        self.assertIsNone(assessment)
 
     @scenario('data/peer_assessment_scenario.xml', user_id='Bob')
     def test_peer_assess_rubric_option_mismatch(self, xblock):
@@ -712,6 +768,7 @@ class TestPeerAssessHandler(XBlockHandlerTestCase):
 
         # Submit an assessment and expect a successful response
         assessment = copy.deepcopy(assessment)
+        assessment['submission_uuid'] = assessment.get('submission_uuid', submission.get('uuid', None))
         resp = self.request(xblock, 'peer_assess', json.dumps(assessment), response_format='json')
 
         if expect_failure:

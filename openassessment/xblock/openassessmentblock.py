@@ -90,8 +90,8 @@ def load(path):
     return data.decode("utf8")
 
 @XBlock.needs("i18n")
+@XBlock.needs("user")
 class OpenAssessmentBlock(
-    XBlock,
     MessageMixin,
     SubmissionMixin,
     PeerAssessmentMixin,
@@ -102,7 +102,8 @@ class OpenAssessmentBlock(
     StaffInfoMixin,
     WorkflowMixin,
     StudentTrainingMixin,
-    LmsCompatibilityMixin
+    LmsCompatibilityMixin,
+    XBlock,
 ):
     """Displays a prompt and provides an area where students can compose a response."""
 
@@ -200,11 +201,30 @@ class OpenAssessmentBlock(
         help="Indicates whether or not there are peers to grade."
     )
 
-    def get_student_item_dict(self):
+    @property
+    def course_id(self):
+        return self._serialize_opaque_key(self.xmodule_runtime.course_id)  # pylint:disable=E1101
+
+    def get_anonymous_user_id(self, username, course_id):
+        """
+        Get the anonymous user id from Xblock user service.
+
+        Args:
+            username(str): user's name entered by staff to get info.
+            course_id(str): course id.
+
+        Returns:
+            A unique id for (user, course) pair
+        """
+        return self.runtime.service(self, 'user').get_anonymous_user_id(username, course_id)
+
+    def get_student_item_dict(self, anonymous_user_id=None):
         """Create a student_item_dict from our surrounding context.
 
         See also: submissions.api for details.
 
+        Args:
+            anonymous_user_id(str): A unique anonymous_user_id for (user, course) pair.
         Returns:
             (dict): The student item associated with this XBlock instance. This
                 includes the student id, item id, and course id.
@@ -215,8 +235,11 @@ class OpenAssessmentBlock(
         # This is not the real way course_ids should work, but this is a
         # temporary expediency for LMS integration
         if hasattr(self, "xmodule_runtime"):
-            course_id = self._serialize_opaque_key(self.xmodule_runtime.course_id)  # pylint:disable=E1101
-            student_id = self.xmodule_runtime.anonymous_student_id  # pylint:disable=E1101
+            course_id = self.course_id  # pylint:disable=E1101
+            if anonymous_user_id:
+                student_id = anonymous_user_id
+            else:
+                student_id = self.xmodule_runtime.anonymous_student_id  # pylint:disable=E1101
         else:
             course_id = "edX/Enchantment_101/April_1"
             if self.scope_ids.user_id is None:
@@ -267,7 +290,13 @@ class OpenAssessmentBlock(
         template = get_template("openassessmentblock/oa_base.html")
         context = Context(context_dict)
         frag = Fragment(template.render(context))
-        frag.add_css(load("static/css/openassessment.css"))
+
+        i18n_service = self.runtime.service(self, 'i18n')
+        if hasattr(i18n_service, 'get_language_bidi') and i18n_service.get_language_bidi():
+            frag.add_css(load("static/css/openassessment-rtl.css"))
+        else:
+            frag.add_css(load("static/css/openassessment-ltr.css"))
+
         frag.add_javascript(load("static/js/openassessment-lms.min.js"))
         frag.initialize_js('OpenAssessmentBlock')
         return frag
@@ -639,7 +668,10 @@ class OpenAssessmentBlock(
             bool
         """
         # By default, assume that we're published, in case the runtime doesn't support publish date.
-        is_published = getattr(self, 'published_date', True) is not None
+        if hasattr(self.runtime, 'modulestore'):
+            is_published = self.runtime.modulestore.has_published_version(self)
+        else:
+            is_published = True
         is_closed, reason, __, __ = self.is_closed(step=step)
         return is_published and (not is_closed or reason == 'due')
 
@@ -737,3 +769,7 @@ class OpenAssessmentBlock(
             return key.to_deprecated_string()
         else:
             return unicode(key)
+
+    def get_username(self, anonymous_user_id):
+        if hasattr(self, "xmodule_runtime"):
+            return self.xmodule_runtime.get_real_user(anonymous_user_id).username

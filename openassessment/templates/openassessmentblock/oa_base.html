@@ -5,25 +5,9 @@
         <div class="wrapper--grid">
             <h2 class="openassessment__title problem__header">{{ title }}</h2>
 
-            <nav class="nav--contents">
-                <h2 class="title">{% trans "Skip to a specific step" %}</h2>
-
-                <ol class="list list--nav">
-                    {%  for assessment in rubric_assessments %}
-                    <li class="list--nav__item">
-                        <a class="action" href="#openassessment__{{ assessment.type }}">{{ assessment.navigation_text }}</a>
-                    </li>
-                    {% endfor %}
-                    <li class="list--nav__item">
-                        <a class="action" href="#openassessment__grade">{% trans "Your grade for this problem" %}</a>
-                    </li>
-                </ol>
-            </nav>
-
             <div class="wrapper-openassessment__message">
                 {% block message %}
                 <div id="openassessment__message" class="openassessment__message message">
-                    <h3 class="message__title">Instructions</h3>
                     <div class="message__content">
                         <p>{% trans "This assignment has several steps. In the first step, you'll provide a response to the question. The other steps appear below the Your Response field." %}</p>
                     </div>

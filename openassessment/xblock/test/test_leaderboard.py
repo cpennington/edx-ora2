@@ -5,6 +5,7 @@ Tests for leaderboard handlers in Open Assessment XBlock.
 import json
 import mock
 from django.core.cache import cache
+from random import randint
 from submissions import api as sub_api
 from .base import XBlockHandlerTransactionTestCase, scenario
 from django.test.utils import override_settings
@@ -65,6 +66,34 @@ class TestLeaderboardRender(XBlockHandlerTransactionTestCase):
             {"content": "test answer 4", "score": 10},
             {"content": "test answer 5", "score": 3},
             {"content": "test answer 2", "score": 2}
+        ])
+        self._assert_leaderboard_visible(xblock, True)
+
+    @scenario('data/leaderboard_show.xml')
+    def test_show_submissions_that_have_greater_than_0_score(self, xblock):
+
+        # Create some submissions (but fewer than the max that can be shown)
+        self._create_submissions_and_scores(xblock, [
+            ("test answer 0", 0),
+            ("test answer 1", 1),
+        ])
+        self._assert_scores(xblock, [
+            {"content": "test answer 1", "score": 1}
+        ])
+        self._assert_leaderboard_visible(xblock, True)
+
+        # Since leaderboard results are cached, we need to clear
+        # the cache in order to see the new scores.
+        cache.clear()
+
+        # Create more submissions than the max
+        self._create_submissions_and_scores(xblock, [
+            ("test answer 2", 10),
+            ("test answer 3", 0)
+        ])
+        self._assert_scores(xblock, [
+            {"content": "test answer 2", "score": 10},
+            {"content": "test answer 1", "score": 1}
         ])
         self._assert_leaderboard_visible(xblock, True)
 
@@ -144,10 +173,10 @@ class TestLeaderboardRender(XBlockHandlerTransactionTestCase):
             # These aren't displayed by the leaderboard, so we can set them
             # to anything without affecting the test.
             student_item = xblock.get_student_item_dict()
-            student_item['student_id'] = "student {num}".format(num=num)
-
+            # adding rand number to the student_id to make it unique.
+            student_item['student_id'] = "student {num} {num2}".format(num=num, num2=randint(2, 1000))
             if submission_key is not None:
-                answer = { submission_key: submission }
+                answer = {submission_key: submission}
             else:
                 answer = submission
 

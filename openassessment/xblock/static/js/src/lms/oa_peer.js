@@ -28,6 +28,7 @@ OpenAssessment.PeerView.prototype = {
             function(html) {
                 // Load the HTML and install event handlers
                 $('#openassessment__peer-assessment', view.element).replaceWith(html);
+                view.server.renderLatex($('#openassessment__peer-assessment', view.element));
                 view.installHandlers(false);
             }
         ).fail(function(errMsg) {
@@ -51,6 +52,7 @@ OpenAssessment.PeerView.prototype = {
             function(html) {
                 // Load the HTML and install event handlers
                 $('#openassessment__peer-assessment', view.element).replaceWith(html);
+                view.server.renderLatex($('#openassessment__peer-assessment', view.element));
                 view.installHandlers(true);
             }
         ).fail(function(errMsg) {
@@ -189,6 +191,8 @@ OpenAssessment.PeerView.prototype = {
     **/
     peerAssessRequest: function(successFunction) {
         var view = this;
+        var uuid = $('#openassessment__peer-assessment').data('submission-uuid');
+
         view.baseView.toggleActionError('peer', null);
         view.peerSubmitEnabled(false);
 
@@ -196,7 +200,8 @@ OpenAssessment.PeerView.prototype = {
         this.server.peerAssess(
             this.rubric.optionsSelected(),
             this.rubric.criterionFeedback(),
-            this.rubric.overallFeedback()
+            this.rubric.overallFeedback(),
+            uuid
         ).done(
             successFunction
         ).fail(function(errMsg) {

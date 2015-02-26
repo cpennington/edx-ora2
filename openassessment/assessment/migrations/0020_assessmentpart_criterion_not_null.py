@@ -9,6 +9,8 @@ class Migration(SchemaMigration):
 
     def forwards(self, orm):
         # Make the AssessmentPart.criterion field NOT nullable
+        # Bug: The field was also (incorrectly) altered to point to the CriterionOption table instead of the Criterion
+        # table. This is fixed in migration 0024.
         db.alter_column('assessment_assessmentpart', 'criterion_id',
             self.gf('django.db.models.fields.related.ForeignKey')(
                 related_name='+', null=False, to=orm['assessment.CriterionOption']
@@ -94,7 +96,7 @@ class Migration(SchemaMigration):
         'assessment.assessmentpart': {
             'Meta': {'object_name': 'AssessmentPart'},
             'assessment': ('django.db.models.fields.related.ForeignKey', [], {'related_name': "'parts'", 'to': "orm['assessment.Assessment']"}),
-            'criterion': ('django.db.models.fields.related.ForeignKey', [], {'related_name': "'+'", 'null': 'True', 'to': "orm['assessment.Criterion']"}),
+            'criterion': ('django.db.models.fields.related.ForeignKey', [], {'related_name': "'+'", 'null': 'True', 'to': "orm['assessment.CriterionOption']"}),
             'feedback': ('django.db.models.fields.TextField', [], {'default': "''", 'blank': 'True'}),
             'id': ('django.db.models.fields.AutoField', [], {'primary_key': 'True'}),
             'option': ('django.db.models.fields.related.ForeignKey', [], {'related_name': "'+'", 'null': 'True', 'to': "orm['assessment.CriterionOption']"})

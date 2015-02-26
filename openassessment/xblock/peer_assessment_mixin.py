@@ -7,6 +7,7 @@ from openassessment.assessment.api import peer as peer_api
 from openassessment.assessment.errors import (
     PeerAssessmentRequestError, PeerAssessmentInternalError, PeerAssessmentWorkflowError
 )
+from openassessment.workflow import api as workflow_api
 from openassessment.workflow.errors import AssessmentWorkflowError
 from openassessment.xblock.defaults import DEFAULT_RUBRIC_FEEDBACK_TEXT
 from .data_conversion import create_rubric_dict
@@ -60,6 +61,20 @@ class PeerAssessmentMixin(object):
 
         if self.submission_uuid is None:
             return {'success': False, 'msg': self._('You must submit a response before you can peer-assess.')}
+
+        uuid_server, uuid_client = self._get_server_and_client_submission_uuids(data)
+        if uuid_server != uuid_client:
+            logger.warning(
+                'Irrelevant assessment submission: '
+                'expected "{uuid_server}", got "{uuid_client}"'.format(
+                    uuid_server=uuid_server,
+                    uuid_client=uuid_client,
+                )
+            )
+            return {
+                'success': False,
+                'msg': self._('This feedback has already been submitted or the submission has been cancelled.'),
+            }
 
         assessment_ui_model = self.get_assessment_module('peer-assessment')
         if assessment_ui_model:
@@ -173,6 +188,7 @@ class PeerAssessmentMixin(object):
             context_dict['peer_due'] = due_date
 
         workflow = self.get_workflow_info()
+        workflow_status = workflow.get('status')
         peer_complete = workflow.get('status_details', {}).get('peer', {}).get('complete', False)
         continue_grading = continue_grading and peer_complete
 
@@ -200,9 +216,14 @@ class PeerAssessmentMixin(object):
                     "Submit your assessment & move to response #{response_number}"
                 ).format(response_number=(count + 2))
 
+        if workflow_status == "cancelled":
+            path = 'openassessmentblock/peer/oa_peer_cancelled.html'
+            # Sets the XBlock boolean to signal to Message that it WAS able to grab a submission
+            self.no_peers = True
+
         # Once a student has completed a problem, it stays complete,
         # so this condition needs to be first.
-        if (workflow.get('status') == 'done' or finished) and not continue_grading:
+        elif (workflow.get('status') == 'done' or finished) and not continue_grading:
             path = "openassessmentblock/peer/oa_peer_complete.html"
 
         # Allow continued grading even if the problem due date has passed
@@ -273,3 +294,24 @@ class PeerAssessmentMixin(object):
             logger.exception(err)
 
         return peer_submission
+
+    def _get_server_and_client_submission_uuids(self, data={}):
+        """
+        Retrieve the server and client submission_uuids
+
+        Args:
+            data (dict): A dictionary containing new peer assessment data
+                This dict should have the following attributes:
+                - `submission_uuid` (string): Unique identifier for the submission being assessed
+                `- options_selected` (dict): Map criterion names to option values
+                `- feedback` (unicode): Written feedback for the submission
+
+        Returns:
+            tuple: (uuid_server, uuid_client)
+        """
+        student_item = self.get_student_item_dict()
+        assessment = self.get_assessment_module('peer-assessment')
+        submission = self.get_peer_submission(student_item, assessment) or {}
+        uuid_server = submission.get('uuid', None)
+        uuid_client = data.get('submission_uuid', None)
+        return uuid_server, uuid_client
